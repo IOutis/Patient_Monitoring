@@ -57,13 +57,11 @@ rdkafka_settings = {
 # Define the schema for incoming Kafka messages
 class AlertSchema(pw.Schema):
     caseid: str
-    tname: str
-    value: float
-    min_value: float
-    max_value: float
-    unit: str
-    time: float
+    time: float  # Changed from str to float to work with windowby
     department: str
+    tracks: dict  # Contains all track data
+    alerts: dict  # Contains only the tracks/signals that exceeded thresholds
+    patient_info: dict  # Contains patient demographic information
 
 # Read messages from the Kafka topic
 alerts_stream = pw.io.kafka.read(
@@ -81,17 +79,15 @@ print("Raw alerts schema:", alerts_stream.schema)
 # taking only the first alert within each window for each case.
 deduped_alerts = alerts_stream.windowby(
     alerts_stream.time,
-    window=pw.temporal.tumbling(duration=60),
+    window=pw.temporal.tumbling(duration=1),
     instance=alerts_stream.caseid
 ).reduce(
     caseid     = pw.reducers.earliest(pw.this.caseid),
-    tname      = pw.reducers.earliest(pw.this.tname),
-    value      = pw.reducers.earliest(pw.this.value),
-    min_value  = pw.reducers.earliest(pw.this.min_value),
-    max_value  = pw.reducers.earliest(pw.this.max_value),
-    unit       = pw.reducers.earliest(pw.this.unit),
     time       = pw.reducers.earliest(pw.this.time),
-    department = pw.reducers.earliest(pw.this.department)
+    department = pw.reducers.earliest(pw.this.department),
+    tracks     = pw.reducers.earliest(pw.this.tracks),
+    alerts     = pw.reducers.earliest(pw.this.alerts),
+    patient_info = pw.reducers.earliest(pw.this.patient_info)
 )
 
 
@@ -99,26 +95,59 @@ deduped_alerts = alerts_stream.windowby(
 
 # ------------------- Define Function to Print and Query Gemini -------------------
 # This function prints the alert and sends it to Gemini.
-def print_message(caseid: str, tname: str, value: float, min_value: float, max_value: float,
-                  unit: str, time_val: float, department: str) -> str:
-    message = (
-        f"Received alert - Case ID: {caseid}, Parameter: {tname}, Value: {value} {unit}, "
-        f"Expected Range: {min_value}-{max_value} {unit}, Time: {time_val}, Department: {department}"
-    )
+def print_message(caseid: str, time_val: float, department: str, tracks: dict, alerts: dict, patient_info: dict) -> str:
+    # Convert JSON objects to Python dicts
+    patient_info_dict = patient_info.as_dict()
+    alerts_dict = alerts.as_dict()
+    tracks_dict = tracks.as_dict()
+
+    # Extract patient information
+    age = patient_info_dict.get('age', 'Unknown')
+    sex = patient_info_dict.get('sex', 'Unknown')
+    
+    # Build message with alert information
+    message = f"Received alert - Case ID: {caseid}, Time: {time_val:.2f}, Department: {department}\n"
+    message += f"Patient: Age {age}, Sex: {sex}\n"
+    
+    # Add information about the alerts (tracks that exceeded thresholds)
+    if alerts_dict:
+        message += "\nAbnormal Vital Signs:\n"
+        for track_id, track_data in alerts_dict.items():
+            track_data_dict = track_data if isinstance(track_data, dict) else track_data.as_dict()
+            track_name = track_data_dict.get('name', 'Unknown')
+            message += f"\nTrack: {track_name} (ID: {track_id})\n"
+            
+            signals_dict = track_data_dict.get('signals', {})
+            signals_dict = signals_dict if isinstance(signals_dict, dict) else signals_dict.as_dict()
+
+            for signal_name, signal_data in signals_dict.items():
+                signal_data_dict = signal_data if isinstance(signal_data, dict) else signal_data.as_dict()
+                value = signal_data_dict.get('value', 'Unknown')
+                min_value = signal_data_dict.get('min_value', 'Unknown')
+                max_value = signal_data_dict.get('max_value', 'Unknown')
+                unit = signal_data_dict.get('unit', '')
+                
+                message += f"  - {signal_name}: {value} {unit} (Expected Range: {min_value}-{max_value} {unit})\n"
+    else:
+        message += "\nNo abnormal vital signs detected."
+    
     print(message)
-    # Prepare a prompt for Gemini (if needed)
+    
+    # Prepare a prompt for Gemini
     prompt = f"""
     You are a medical assistant. Analyze the following alert:
     {message}
     
-    Provide a concise summary and recommendations.
+    Provide a concise summary and recommendations based on the patient's age, sex, and the abnormal vital signs.
     """
     response = llm.invoke([HumanMessage(content=prompt)])
+    
     # Print Gemini's response
     print(f"🤖 Gemini response for Case {caseid}: {response}")
-    # Sleep for a short period to avoid rapid-fire API calls (adjust as needed)
+    
+    # Sleep to prevent rapid API calls
     time.sleep(5)
-    # Return the original message (or any placeholder) so that pw.apply produces a column of type str
+    
     return message
 
 # ------------------- Apply the Function to Deduplicated Alerts -------------------
@@ -126,13 +155,11 @@ final_alerts = deduped_alerts.select(
     debug_output = pw.apply(
         print_message,
         deduped_alerts.caseid,
-        deduped_alerts.tname,
-        deduped_alerts.value,
-        deduped_alerts.min_value,
-        deduped_alerts.max_value,
-        deduped_alerts.unit,
         deduped_alerts.time,
-        deduped_alerts.department
+        deduped_alerts.department,
+        deduped_alerts.tracks,
+        deduped_alerts.alerts,
+        deduped_alerts.patient_info
     )
 )
 

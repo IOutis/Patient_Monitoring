@@ -42,11 +42,29 @@ def display_alert_data(data):
     """ Format and display alerts when a threshold is exceeded """
     print("\n🚨 **ALERT: Threshold Exceeded!** 🚨\n")
     print(f"🔹 **Patient ID**     : {data['caseid']}")
-    print(f"🔹 **Track Name**     : {data['tname']}")
     print(f"🔹 **Time Recorded**  : {data['time']} sec")
-    print(f"🔹 **Value**          : {data['value']} {data['unit']}")
-    print(f"🔹 **Expected Range** : {data['min_value']} - {data['max_value']} {data['unit']}")
-    print(f"🔹 **Department**     : {data['department']}\n")
+    print(f"🔹 **Department**     : {data['department']}")
+    
+    # Display patient info if available
+    if 'patient_info' in data:
+        print(f"🔹 **Age**            : {data['patient_info'].get('age', 'N/A')} years")
+        print(f"🔹 **Sex**            : {data['patient_info'].get('sex', 'N/A')}")
+        
+        # Display lab results if available
+        if 'lab_results' in data['patient_info'] and data['patient_info']['lab_results']:
+            print("\n🧪 **Lab Results:**")
+            for lab, result in data['patient_info']['lab_results'].items():
+                print(f"   - {lab}: {result}")
+    
+    # Display alerts (values that exceeded thresholds)
+    print("\n⚠️ **Threshold Violations:**")
+    for track_id, track_info in data['alerts'].items():
+        track_name = track_info['name']
+        print(f"\n📊 Track: {track_name} (ID: {track_id})")
+        
+        for signal_name, signal_info in track_info['signals'].items():
+            print(f"   - {signal_name}: {signal_info['value']} {signal_info['unit']}")
+            print(f"     Expected Range: {signal_info['min_value']} - {signal_info['max_value']} {signal_info['unit']}")
 
     print("\n📡 Monitoring for new alerts...")
     print("=" * 60)

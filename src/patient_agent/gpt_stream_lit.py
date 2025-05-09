@@ -5,7 +5,7 @@ import time
 import json
 import os
 from kafka import KafkaProducer
-from patient_agent.user_friendly import fetch_track_list, fetch_track_data,tname_mapping,lab_results_map
+from user_friendly import fetch_track_list, fetch_track_data,tname_mapping,lab_results_map
 # ✅ Constants & Config
 KAFKA_BROKER = "localhost:9092"
 TRACK_API_BASE_URL = "https://api.vitaldb.net"
@@ -54,11 +54,11 @@ if "alerts" not in st.session_state:
     st.session_state.alerts = []
 if "track_entries" not in st.session_state:
     st.session_state.track_entries = None
-if "selected_track" not in st.session_state:
-    st.session_state.selected_track = None
+# if "selected_track" not in st.session_state:
+#     st.session_state.selected_track = None
 
 # 🎨 Streamlit UI Setup
-st.set_page_config(page_title="Patient Monitoring", layout="wide")
+# st.set_page_config(page_title="Patient Monitoring", layout="wide")
 st.title("🩺 Real-time Patient Monitoring Dashboard")
 
 # 🧩 Sidebar - Input Controls
@@ -69,8 +69,9 @@ case_id_input = st.sidebar.text_input("🔍 Enter Case ID")
 def fetch_tracks_callback():
     if case_id_input:
         st.session_state.case_id = case_id_input
+        st.write(st.session_state.case_id)
         st.session_state.track_entries = fetch_track_list(case_id_input)
-        st.session_state.selected_track = None
+        # st.session_state.selected_track = None
         st.session_state.monitoring_active = False
         st.session_state.alerts = []
     else:
@@ -79,51 +80,50 @@ def fetch_tracks_callback():
 # 📡 Fetch tracks button
 st.sidebar.button("🔍 Fetch Tracks", on_click=fetch_tracks_callback)
 
-# 🔄 Display track selection if tracks are available
-if st.session_state.track_entries is not None and not st.session_state.track_entries.empty:
-    st.sidebar.success(f"✅ Found {len(st.session_state.track_entries)} tracks for Case ID: {st.session_state.case_id}")
+# # 🔄 Display track selection if tracks are available
+# if st.session_state.track_entries is not None and not st.session_state.track_entries.empty:
+#     st.sidebar.success(f"✅ Found {len(st.session_state.track_entries)} tracks for Case ID: {st.session_state.case_id}")
     
-    # Create track options for the selectbox with friendly names
-    track_options = {}
-    for _, track_entry in st.session_state.track_entries.iterrows():
-        track_id = track_entry["tid"]
-        track_name = track_entry["tname"]
-        friendly_name = tname_mapping.get(track_name, f"Unknown ({track_name})")
-        track_options[f"{track_id}|{track_name}"] = f"{friendly_name}"
+#     # Create track options for the selectbox with friendly names
+#     track_options = {}
+#     for _, track_entry in st.session_state.track_entries.iterrows():
+#         track_id = track_entry["tid"]
+#         track_name = track_entry["tname"]
+#         friendly_name = tname_mapping.get(track_name, f"Unknown ({track_name})")
+#         track_options[f"{track_id}|{track_name}"] = f"{friendly_name}"
     
-    # Track selection dropdown with friendly names
-    selected_track_key = st.sidebar.selectbox(
-        "📊 Select Track to Monitor",
-        options=list(track_options.keys()),
-        format_func=lambda x: track_options[x]
-    )
+#     # Track selection dropdown with friendly names
+#     selected_track_key = st.sidebar.selectbox(
+#         "📊 Select Track to Monitor",
+#         options=list(track_options.keys()),
+#         format_func=lambda x: track_options[x]
+#     )
     
-    if selected_track_key:
-        track_id, track_name = selected_track_key.split("|", 1)
-        st.session_state.selected_track = {"id": track_id, "name": track_name}
+#     if selected_track_key:
+#         track_id, track_name = selected_track_key.split("|", 1)
+#         st.session_state.selected_track = {"id": track_id, "name": track_name}
 
 # 🚀 Start/Stop Monitoring Callbacks
 def start_monitoring_callback():
-    if st.session_state.case_id and st.session_state.selected_track:
+    if st.session_state.case_id: # Removed st.session_state.selected_track dependency
         st.session_state.monitoring_active = True
         st.session_state.alerts = []
     else:
-        st.sidebar.error("❌ Please select a track to monitor")
+        st.sidebar.error("❌ Please enter a Case ID and fetch tracks first.") # Updated error message
 
 def stop_monitoring_callback():
     st.session_state.monitoring_active = False
 
 # 📡 Start/Stop Buttons
-if st.session_state.case_id and st.session_state.selected_track:
+if st.session_state.case_id: # Removed st.session_state.selected_track dependency
+    
     if not st.session_state.monitoring_active:
         st.sidebar.button("▶️ Start Monitoring", on_click=start_monitoring_callback)
     else:
         st.sidebar.button("⏹️ Stop Monitoring", on_click=stop_monitoring_callback)
         st.sidebar.success(f"✅ Monitoring Patient ID: {st.session_state.case_id}")
-        # Display friendly name if available
-        track_name = st.session_state.selected_track['name']
-        friendly_name = tname_mapping.get(track_name, track_name)
-        st.sidebar.info(f"📡 Tracking: {friendly_name}")
+        # Removed selected track display as we monitor all tracks now
+        st.sidebar.info(f"📡 Monitoring all available tracks.")
 
 # 🧩 Main Content - Patient Data & Alerts
 patient_container = st.container()
@@ -187,17 +187,15 @@ current_time = time.time()
 if st.session_state.monitoring_active:
     if current_time - st.session_state.last_update_time >= REFRESH_INTERVAL:
         with patient_container:
-            if st.session_state.selected_track:
-                # Fetch data for the selected track
-                track_id = st.session_state.selected_track["id"]
-                track_name = st.session_state.selected_track["name"]
-                track_data = fetch_track_data(track_id, st.session_state.case_id, track_name)
-                
-                # Update the last update time
-                st.session_state.last_update_time = current_time
+            # if st.session_state.selected_track: # Removed selected_track check
+            # Fetch data for all tracks associated with the case_id
+            track_data = fetch_track_data(st.session_state.case_id)
+            
+            # Update the last update time
+            st.session_state.last_update_time = current_time
                 
                 # Display alerts if any
-                if st.session_state.alerts:
+            if st.session_state.alerts:
                     with alert_container:
                         st.subheader("🚨 Alerts")
                         for alert in st.session_state.alerts:
