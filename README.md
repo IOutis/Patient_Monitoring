@@ -40,19 +40,5 @@ This project simulates a real-time ICU patient monitoring environment using actu
 
 > ✅ Kafka must be running locally or in Docker.
 
-```bash
-# Start Kafka (if using Docker)
-docker-compose up -d
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Run metadata producer
-python producers/patient_metadata_producer.py
-
-# Run vitals and labs producers
-python producers/vitals_producer.py
-python producers/lab_results_producer.py
-```
 To run the project run the file 
 gpt_stream_lit.py present in src/patient_agent
